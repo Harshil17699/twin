@@ -13,7 +13,21 @@ echo "📦 Building Lambda package..."
 
 # 2. Terraform workspace & apply
 cd terraform
-terraform init -input=false
+
+# ✅ AWS CLI with SSL bypass
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+  --query Account \
+  --output text \
+  --no-verify-ssl)
+
+AWS_REGION=${DEFAULT_AWS_REGION:-us-east-1}
+
+terraform init -input=false \
+  -backend-config="bucket=twin-terraform-state-${AWS_ACCOUNT_ID}" \
+  -backend-config="key=${ENVIRONMENT}/terraform.tfstate" \
+  -backend-config="region=${AWS_REGION}" \
+  -backend-config="dynamodb_table=twin-terraform-locks" \
+  -backend-config="encrypt=true"
 
 if ! terraform workspace list | grep -q "$ENVIRONMENT"; then
   terraform workspace new "$ENVIRONMENT"
@@ -23,9 +37,16 @@ fi
 
 # Use prod.tfvars for production environment
 if [ "$ENVIRONMENT" = "prod" ]; then
-  TF_APPLY_CMD=(terraform apply -var-file=prod.tfvars -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" -auto-approve)
+  TF_APPLY_CMD=(terraform apply \
+    -var-file=prod.tfvars \
+    -var="project_name=$PROJECT_NAME" \
+    -var="environment=$ENVIRONMENT" \
+    -auto-approve)
 else
-  TF_APPLY_CMD=(terraform apply -var="project_name=$PROJECT_NAME" -var="environment=$ENVIRONMENT" -auto-approve)
+  TF_APPLY_CMD=(terraform apply \
+    -var="project_name=$PROJECT_NAME" \
+    -var="environment=$ENVIRONMENT" \
+    -auto-approve)
 fi
 
 echo "🎯 Applying Terraform..."
@@ -44,7 +65,10 @@ echo "NEXT_PUBLIC_API_URL=$API_URL" > .env.production
 
 npm install
 npm run build
-aws s3 sync ./out "s3://$FRONTEND_BUCKET/" --delete
+
+# ✅ AWS CLI with SSL bypass
+aws s3 sync ./out "s3://$FRONTEND_BUCKET/" --delete --no-verify-ssl
+
 cd ..
 
 # 4. Final messages

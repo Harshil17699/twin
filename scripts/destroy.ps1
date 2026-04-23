@@ -16,6 +16,23 @@ Write-Host "Preparing to destroy $ProjectName-$Environment infrastructure..." -F
 # Navigate to terraform directory
 Set-Location (Join-Path (Split-Path $PSScriptRoot -Parent) "terraform")
 
+# Get AWS Account ID for backend configuration (✅ SSL bypass)
+$awsAccountId = aws sts get-caller-identity `
+    --query Account `
+    --output text `
+    --no-verify-ssl
+
+$awsRegion = if ($env:DEFAULT_AWS_REGION) { $env:DEFAULT_AWS_REGION } else { "us-east-1" }
+
+# Initialize terraform with S3 backend
+Write-Host "Initializing Terraform with S3 backend..." -ForegroundColor Yellow
+terraform init -input=false `
+  -backend-config="bucket=twin-terraform-state-$awsAccountId" `
+  -backend-config="key=$Environment/terraform.tfstate" `
+  -backend-config="region=$awsRegion" `
+  -backend-config="dynamodb_table=twin-terraform-locks" `
+  -backend-config="encrypt=true"
+
 # Check if workspace exists
 $workspaces = terraform workspace list
 if (-not ($workspaces | Select-String $Environment)) {
@@ -30,16 +47,13 @@ terraform workspace select $Environment
 
 Write-Host "Emptying S3 buckets..." -ForegroundColor Yellow
 
-# Get AWS Account ID for bucket names
-$awsAccountId = aws sts get-caller-identity --query Account --output text --no-verify-ssl
-
 # Define bucket names with account ID
 $FrontendBucket = "$ProjectName-$Environment-frontend-$awsAccountId"
-$MemoryBucket = "$ProjectName-$Environment-memory-$awsAccountId"
+$MemoryBucket   = "$ProjectName-$Environment-memory-$awsAccountId"
 
 # Empty frontend bucket if it exists
 try {
-    aws s3 ls "s3://$FrontendBucket" 2>$null | Out-Null
+    aws s3 ls "s3://$FrontendBucket" --no-verify-ssl 2>$null | Out-Null
     Write-Host "  Emptying $FrontendBucket..." -ForegroundColor Gray
     aws s3 rm "s3://$FrontendBucket" --recursive --no-verify-ssl
 } catch {
@@ -48,7 +62,7 @@ try {
 
 # Empty memory bucket if it exists
 try {
-    aws s3 ls "s3://$MemoryBucket" 2>$null | Out-Null
+    aws s3 ls "s3://$MemoryBucket" --no-verify-ssl 2>$null | Out-Null
     Write-Host "  Emptying $MemoryBucket..." -ForegroundColor Gray
     aws s3 rm "s3://$MemoryBucket" --recursive --no-verify-ssl
 } catch {
@@ -59,9 +73,14 @@ Write-Host "Running terraform destroy..." -ForegroundColor Yellow
 
 # Run terraform destroy with auto-approve
 if ($Environment -eq "prod" -and (Test-Path "prod.tfvars")) {
-    terraform destroy -var-file="prod.tfvars" -var="project_name=$ProjectName" -var="environment=$Environment" -auto-approve
+    terraform destroy -var-file=prod.tfvars `
+                     -var="project_name=$ProjectName" `
+                     -var="environment=$Environment" `
+                     -auto-approve
 } else {
-    terraform destroy -var="project_name=$ProjectName" -var="environment=$Environment" -auto-approve
+    terraform destroy -var="project_name=$ProjectName" `
+                     -var="environment=$Environment" `
+                     -auto-approve
 }
 
 Write-Host "Infrastructure for $Environment has been destroyed!" -ForegroundColor Green
