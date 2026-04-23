@@ -1,0 +1,21 @@
+{
+    "full_name": "Harshil Shroff",
+    "name": "Harshil",
+    "current_role": "Data Scientist",
+    "location": "Atlanta, GA",
+    "email": "harshilshroff500@gmail.com",
+    "linkedin": "linkedin.com/in/harshilshroff",
+    "specialties": [
+      "Data Science",
+      "Machine Learning",
+      "AI Engineering"
+    ],
+    "years_experience": 3,
+    "education": [
+      {
+        "degree": "Master of Science in Data Science and Analytics",
+        "institution": "Georgia State University",
+        "year": "2023"
+      }
+    ]
+  }
